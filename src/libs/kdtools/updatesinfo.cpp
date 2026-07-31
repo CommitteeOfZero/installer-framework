@@ -14,6 +14,7 @@
 #include <QVector>
 #include <QUrl>
 #include <QXmlStreamReader>
+#include <QRegularExpression>
 
 using namespace KDUpdater;
 
@@ -123,6 +124,8 @@ bool UpdatesInfoData::parsePackageUpdateElement(QXmlStreamReader &reader)
                 scriptHash.insert(QLatin1String("postLoadScript"), reader.readElementText());
             else
                 scriptHash.insert(QLatin1String("installScript"), reader.readElementText());
+        } else if (elementName == QLatin1String("DownloadableArchives")) {
+            parseDownloadableArchives(reader, info.data);
         } else {
             info.data[elementName] = reader.readElementText();
         }
@@ -216,6 +219,49 @@ void UpdatesInfoData::parseLicenses(QXmlStreamReader &reader, QHash<QString, QVa
     }
     if (!licenseHash.isEmpty())
         info.insert(QLatin1String("Licenses"), licenseHash);
+}
+
+void UpdatesInfoData::parseDownloadableArchives(QXmlStreamReader &reader,
+                                                QHash<QString, QVariant> &info) const
+{
+    QString text;
+    QHash<QString, QVariant> archives;
+
+    while (reader.readNext()) {
+        if (reader.tokenType() == QXmlStreamReader::Characters) {
+            text += reader.text();
+        } else if (reader.tokenType() == QXmlStreamReader::StartElement) {
+            if (reader.name() == QLatin1String("Archive")) {
+                QString path;
+                QUrl url;
+
+                while (reader.readNextStartElement()) {
+                    if (reader.name() == QLatin1String("Url"))
+                        url = reader.readElementText();
+                    else if (reader.name() == QLatin1String("Path"))
+                        path = reader.readElementText();
+                    else
+                        reader.skipCurrentElement();
+                }
+
+                if (!path.isEmpty())
+                    archives.insert(path, url);
+            } else {
+                reader.skipCurrentElement();
+            }
+        } else if (reader.tokenType() == QXmlStreamReader::EndElement
+                   && reader.name() == QLatin1String("DownloadableArchives")) {
+            break;
+        }
+    }
+
+    if (!archives.isEmpty()) {
+        info.insert(QLatin1String("DownloadableArchives"),
+                    QVariant::fromValue(archives));
+    } else if (!text.trimmed().isEmpty()) {
+        info.insert(QLatin1String("DownloadableArchives"),
+                    text.trimmed());
+    }
 }
 //
 // UpdatesInfo

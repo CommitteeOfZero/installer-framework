@@ -1,0 +1,62 @@
+************************************* Invoked: Fri Jul 31 01:18:10 2026
+[0] Arguments: P:\git\dirac-sea\dist\ImpactoInstaller.exe, --verbose
+[0] Resource tree:
+[0]      :/translations
+[0]      :/translations/ifw_zh_CN.qm
+[0]      :/translations/ifw_pt_PT.qm
+[0]      :/translations/ifw_pt_BR.qm
+[0]      :/translations/qt_ar.qm
+[0]      :/translations/qt_ca.qm
+[0]      :/translations/qt_da.qm
+[0]      :/translations/qt_de.qm
+[0]      :/translations/qt_en.qm
+[0]      :/translations/qt_es.qm
+[0]      :/translations/qt_fr.qm
+[0]      :/translations/qt_hr.qm
+[0]      :/translations/qt_hu.qm
+[0]      :/translations/qt_ja.qm
+[0]      :/translations/qt_it.qm
+[0]      :/translations/qt_ko.qm
+[0]      :/translations/qt_pl.qm
+[0]      :/translations/qt_ru.qm
+[0]      :/translations/qt_sv.qm
+[0]      :/translations/qt_pt_PT.qm
+[0]      :/translations/qt_pt_BR.qm
+[0]      :/translations/ifw_ar.qm
+[0]      :/translations/ifw_ca.qm
+[0]      :/translations/ifw_de.qm
+[0]      :/translations/ifw_da.qm
+[0]      :/translations/ifw_es.qm
+[0]      :/translations/ifw_en.qm
+[0]      :/translations/ifw_fr.qm
+[0]      :/translations/ifw_hr.qm
+[0]      :/translations/ifw_hu.qm
+[0]      :/translations/ifw_it.qm
+[0]      :/translations/ifw_ja.qm
+[0]      :/translations/ifw_ko.qm
+[0]      :/translations/ifw_pl.qm
+[0]      :/translations/ifw_ru.qm
+[0]      :/translations/ifw_sv.qm
+[0]      :/translations/qt_zh_CN.qm
+[0]      :/qt
+[0]      :/qt/etc
+[0]      :/qt/etc/qt.conf
+[0]      :/uninstall.png
+[0]      :/warning.png
+[0]      :/search@2x.png
+[0]      :/installer.png
+[0]      :/installer.ico
+[0]      :/warning@2x.png
+[0]      :/keepinstalled.png
+[0]      :/Notification-Type@2x.png
+[0]      :/installer.icns
+[0]      :/search.png
+[0]      :/install.png
+[0]      :/keepuninstalled.png
+[0]      :/Notification-Type.png
+[0]      :/qpdf
+[0]      :/qpdf/sRGB2014.icc
+[10] Operations sanity check succeeded.
+[11] Warning: Cannot create lock file "C:\Users\dexti\AppData\Local\Temp\ImpactoInstaller1234865.lock": The process cannot access the file because it is being used by another process.
+ (0x00000020)
+[43] UnableToStart : Unable to start installer : Another ImpactoInstaller instance is already running. Wait until it finishes, close it, or restart your system.

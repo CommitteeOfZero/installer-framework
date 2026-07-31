@@ -102,7 +102,7 @@ void CopyFileTask::doTask(QFutureInterface<FileTaskResult> &fi)
             else
                 observer.addCheckSumData(buffer.left(read));
 
-            if (m_progressValueInBytes)
+            if (progressValueInBytes())
                 emit progressChanged(dataRead);
             else
                 fi.setProgressValueAndText(observer.progressValue(), observer.progressText());
@@ -119,11 +119,6 @@ void CopyFileTask::doTask(QFutureInterface<FileTaskResult> &fi)
     }
 
     fi.reportFinished();
-}
-
-void CopyFileTask::setProgressValueInBytes(bool progressInBytes)
-{
-    m_progressValueInBytes = progressInBytes;
 }
 
 }   // namespace QInstaller

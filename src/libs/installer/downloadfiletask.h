@@ -92,21 +92,15 @@ public:
     void setAuthenticator(const QAuthenticator &authenticator);
     void setProxyFactory(KDUpdater::FileDownloaderProxyFactory *factory);
 
-    void setProgressValueInBytes(bool progressInBytes);
-    bool progressValueInBytes() const;
-
     void doTask(QFutureInterface<FileTaskResult> &fi) override;
 
 Q_SIGNALS:
-    void progressChanged(quint64 progress);
-    void fileDownloaded(const QString &fileName, const QString &componentName);
     void networkDisconnected();
 
 private:
     friend class Downloader;
     QAuthenticator m_authenticator;
     QScopedPointer<KDUpdater::FileDownloaderProxyFactory> m_proxyFactory;
-    bool m_progressInBytes;
 };
 
 }   // namespace QInstaller

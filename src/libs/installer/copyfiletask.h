@@ -26,14 +26,6 @@ public:
     CopyFileTask(const QString &source, const QString &target);
 
     void doTask(QFutureInterface<FileTaskResult> &fi) override;
-    void setProgressValueInBytes(bool progressInBytes);
-
-Q_SIGNALS:
-    void fileDownloaded(const QString &fileName, const QString &componentName);
-    void progressChanged(const quint64 progress);
-
-private:
-    bool m_progressValueInBytes;
 };
 
 }   // namespace QInstaller

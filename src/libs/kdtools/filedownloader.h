@@ -11,7 +11,11 @@
 #include "filedownloaderfactory.h"
 #include "abstractfiletask.h"
 #include "packagemanagercore.h"
+#include "filedownloadrequest.h"
+#include "downloadfiletask.h"
+#include "copyfiletask.h"
 
+#include <memory>
 #include <QtCore/QObject>
 #include <QtCore/QUrl>
 
@@ -27,33 +31,24 @@ class FileDownloaderProxyFactory;
 class KDTOOLS_EXPORT FileDownloader : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(QString scheme READ scheme WRITE setScheme)
 
 public:
-    explicit FileDownloader(const QString &scheme, QObject *parent = 0);
-    ~FileDownloader();
+    explicit FileDownloader(QObject *parent = nullptr);
 
-    enum DownloadType {
-        ChecksumFile,
-        RegularFile
-    };
-
-    void resetFileItems();
-    void addFileItem(FileTaskItem item);
-    void addFileItems(QList<FileTaskItem> items);
-    QList<FileTaskItem> fileItems() const;
-    QList<FileTaskItem> fileItemsInChunks();
-
-    QString scheme() const;
-    void setScheme(const QString &scheme);
+    void resetRequests();
+    void addRequest(const FileDownloadRequest &request);
+    void addRequests(const QList<FileDownloadRequest> &requests);
+    QList<FileDownloadRequest> requests() const;
+    QList<FileDownloadRequest> takeNextChunk(FileDownloadRequest::Role role,
+                                             FileDownloadRequest::TransferMethod transferMethod);
 
     void setPackageManagerCore(PackageManagerCore *core);
 
-    virtual FileDownloader *clone(QObject *parent=0) const = 0;
+    void download();
+    void setupFileTask(AbstractFileTask *const task,
+                       FileDownloadRequest::Role role,
+                       FileDownloadRequest::TransferMethod transferMethod);
 
-    void download(DownloadType downloadType);
-    template <typename AbstractTask>
-    void setupFileTask(AbstractTask *const task, const DownloadType downloadType);
     void resetTasks();
 
     FileDownloaderProxyFactory *proxyFactory() const;
@@ -61,15 +56,15 @@ public:
 
     quint64 bytesReceived() const;
 
-    bool dataDownloded() const;
-    void setDataDownloded(bool downloaded);
-    bool sha1Downloded() const;
-    void setSha1Downloded(bool downloaded);
+    bool dataDownloaded() const;
+    void setDataDownloaded(bool downloaded);
+    bool sha1Downloaded() const;
+    void setSha1Downloaded(bool downloaded);
 
-    virtual void reset() = 0;
+    void reset();
 
 Q_SIGNALS:
-    void downloadCompleted(const QString &sceme);
+    void downloadCompleted();
     void downloadAborted(const JobError error, const QString &errorStr);
     void registerFile(const QInstaller::FileTaskItem &item);
     void setProcessedAmount();
@@ -86,21 +81,23 @@ protected:
     void setDownloadAborted(const JobError error, const QString &errorStr);
     bool isDownloadAborted() const;
 
-private:
-    QFutureWatcher<QInstaller::FileTaskResult> m_shaDownloadTask;
-    QFutureWatcher<QInstaller::FileTaskResult> m_archiveDownloadTask;
+    DownloadFileTask* createNetworkTask(const QList<FileDownloadRequest>& requests);
+    CopyFileTask* createLocalTask(const QList<FileDownloadRequest>& requests);
 
 private Q_SLOTS:
-    virtual bool doDownload(DownloadType downloadType) = 0;
-    void shaDownloadTaskFinished();
-    void archiveDownloadTaskFinished();
+    bool startStage(FileDownloadRequest::Role role);
+    void onTaskFinished(QFutureWatcher<FileTaskResult> *watcher,
+                        FileDownloadRequest::Role role);
+    void shaDownloadFinished();
+    void archiveDownloadFinished();
 
 private:
     struct Private;
-    Private *d;
-    QList<FileTaskResult> m_shaDownloadResult;
-    QList<FileTaskResult> m_archiveDownloadResult;
-    int m_downloadableChunkSize;
+    struct PrivatePtr: public std::unique_ptr<Private> 
+    {
+        using std::unique_ptr<Private>::unique_ptr;
+        ~PrivatePtr();
+    } d;
 };
 
 } // namespace KDUpdater

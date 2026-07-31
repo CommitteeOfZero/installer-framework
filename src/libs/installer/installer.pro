@@ -158,7 +158,8 @@ HEADERS += packagemanagercore.h \
     horizontalruler.h \
     spacewidget.h \
     readyforinstallationpage_p.h \
-    labelwithpixmap.h
+    labelwithpixmap.h \
+    downloadablearchive.h \
 
 SOURCES += packagemanagercore.cpp \
     abstractarchive.cpp \

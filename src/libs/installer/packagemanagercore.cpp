@@ -840,15 +840,17 @@ int PackageManagerCore::downloadNeededArchives(double partProgressSize)
 {
     Q_ASSERT(partProgressSize >= 0 && partProgressSize <= 1);
 
-    QList<QPair<QString, QString> > archivesToDownload;
+    QList<QInstaller::DownloadableArchive> archivesToDownload;
     quint64 archivesToDownloadTotalSize = 0;
     QList<Component*> neededComponents = orderedComponentsToInstall();
     foreach (Component *component, neededComponents) {
-        // collect all archives to be downloaded
-        const QStringList toDownload = component->downloadableArchives();
-        foreach (const QString &versionFreeString, toDownload) {
-            archivesToDownload.push_back(qMakePair(scInstallerPrefixWithTwoArgs.arg(component->name(), versionFreeString),
-                scThreeArgs.arg(component->repositoryUrl().toString(), component->name(), versionFreeString)));
+        const QList<QInstaller::DownloadableArchive> toDownload = component->downloadableArchives();
+        foreach (QInstaller::DownloadableArchive archive, toDownload) {
+            const QString oldName = archive.fileName;
+            const QUrl repoUrl = component->repositoryUrl().adjusted(QUrl::StripTrailingSlash);
+            archive.fileName = scInstallerPrefixWithTwoArgs.arg(component->name(), oldName);
+            archive.sha1Url = QUrl(scThreeArgs.arg(repoUrl.toString(),component->name(), oldName) + QLatin1String(".sha1"));
+            archivesToDownload.append(archive);
         }
         archivesToDownloadTotalSize += component->value(scCompressedSize).toULongLong();
     }
@@ -4411,7 +4413,7 @@ bool PackageManagerCore::updateComponentData(struct Data &data, Component *compo
         }
 
         if (component->isFromOnlineRepository())
-            component->addDownloadableArchives(data.package->data(scDownloadableArchives).toString());
+            component->addDownloadableArchives(data.package->data(scDownloadableArchives));
 
         const QStringList componentsToReplace = QInstaller::splitStringWithComma(data.package->data(scReplaces).toString());
         if (!componentsToReplace.isEmpty()) {

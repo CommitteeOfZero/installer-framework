@@ -5,6 +5,7 @@
 
 #include "repository.h"
 #include "filedownloaderfactory.h"
+#include "filedownloadrequest.h"
 
 #include <QDataStream>
 #include <QFileInfo>
@@ -69,7 +70,7 @@ Repository::Repository(const QUrl &url, bool isDefault, bool compressed)
 Repository Repository::fromUserInput(const QString &repositoryUrl, bool compressed)
 {
     QUrl url = QUrl::fromUserInput(repositoryUrl, QDir::currentPath());
-    const QStringList supportedSchemes = KDUpdater::FileDownloaderFactory::supportedSchemes();
+    const QStringList supportedSchemes = KDUpdater::FileDownloadRequest::supportedSchemes();
     if (!supportedSchemes.contains(url.scheme()) && QFileInfo::exists(url.toString()))
         url = QLatin1String("file:///") + url.toString();
 

@@ -315,7 +315,6 @@ void Component::loadDataFromPackage(const Package &package)
     setValue(scVersion, package.data(scVersion).toString());
     setValue(scInheritVersion, package.data(scInheritVersion).toString());
     setValue(scDependencies, package.data(scDependencies).toString());
-    setValue(scDownloadableArchives, package.data(scDownloadableArchives).toString());
     setValue(scVirtual, package.data(scVirtual).toString());
     setValue(scSortingPriority, package.data(scSortingPriority).toString());
 
@@ -969,6 +968,11 @@ QStringList Component::archives() const
     QString pathString = scInstallerPrefixWithOneArgs.arg(name());
     QStringList archivesNameList = QDir(pathString).entryList();
 
+
+    qDebug() << "installer path:" << pathString;
+    qDebug() << "exists:" << QDir(pathString).exists();
+    qDebug() << "entries:" << QDir(pathString).entryList(QDir::AllEntries);
+
     // In resources we may have older version of archives, this can happen
     // when there is offline installer with same component with lower version
     // number and newer version is available online
@@ -982,6 +986,32 @@ QStringList Component::archives() const
 /*!
     Adds the archive \a path to this component. This can only be called if this component was
     downloaded from an online repository. When adding \a path, it will be downloaded from the
+    \a url when the installation starts. This function can be called again with the same \a path
+    to provide an alternative \a url mirror.
+
+    \sa {component::addDownloadableArchive}{component.addDownloadableArchive}
+    \sa removeDownloadableArchive(), fromOnlineRepository, archives
+*/
+void Component::addDownloadableArchive(const QString &path, const QString &url)
+{
+    Q_ASSERT(isFromOnlineRepository());
+    qCDebug(QInstaller::lcDeveloperBuild)
+        << "addDownloadable" << path << "url:" << url;
+
+    const QUrl archiveUrl(url);
+    if (path.isEmpty() || !archiveUrl.isValid())
+        return;
+
+    const QString versionedName = d->m_vars.value(scVersion) + path;
+
+    DownloadableArchive &archive = d->m_downloadableArchives[versionedName];
+    archive.fileName = versionedName;
+    archive.url = archiveUrl;
+}
+
+/*!
+    Adds the archive \a path to this component. This can only be called if this component was
+    downloaded from an online repository. When adding \a path, it will be downloaded from the
     repository when the installation starts.
 
     \sa {component::addDownloadableArchive}{component.addDownloadableArchive}
@@ -990,17 +1020,58 @@ QStringList Component::archives() const
 void Component::addDownloadableArchive(const QString &path)
 {
     Q_ASSERT(isFromOnlineRepository());
-    qCDebug(QInstaller::lcDeveloperBuild) << "addDownloadable" << path;
-    d->m_downloadableArchives.append(d->m_vars.value(scVersion) + path);
+
+    addDownloadableArchive(path,
+        scThreeArgs.arg(repositoryUrl().toString(),
+                        name(),
+                        path));
 }
 
 /*!
     \internal
 */
-void Component::addDownloadableArchives(const QString& archives)
+void Component::addDownloadableArchives(const QVariant &archives)
 {
     Q_ASSERT(isFromOnlineRepository());
-    d->m_downloadableArchivesVariable = archives;
+
+    qCDebug(QInstaller::lcDeveloperBuild) << "addDownloadableArchives" << archives;
+
+    if (archives.canConvert<QList<DownloadableArchive>>()) {
+        d->m_downloadableArchivesInit = archives.value<QList<DownloadableArchive>>();
+        return;
+    }
+
+    if (archives.canConvert<QHash<QString, QVariant>>()) {
+        const auto archiveMap = archives.value<QHash<QString, QVariant>>();
+
+
+        for (auto it = archiveMap.cbegin(); it != archiveMap.cend(); ++it) {
+            DownloadableArchive archive;
+            archive.fileName = d->m_vars.value(scVersion) + it.key();
+
+            if (it.value().canConvert<QUrl>())
+                archive.url = it.value().value<QUrl>();
+
+             d->m_downloadableArchivesInit.append(archive);
+        }
+        return;
+    }
+    if (archives.canConvert<QString>()) {
+        QHash<QString, QVariant> downloadableArchives;
+
+        const QStringList paths = archives.toString()
+            .split(QInstaller::commaRegExp(), Qt::SkipEmptyParts);
+            
+        for (const QString &path : paths) {
+            DownloadableArchive archive;
+            archive.fileName =  d->m_vars.value(scVersion) + path;
+            const QUrl repoUrl = repositoryUrl().adjusted(QUrl::StripTrailingSlash);
+            archive.url = QUrl(scThreeArgs.arg(repoUrl.toString(),
+                                name(),
+                                archive.fileName));
+            d->m_downloadableArchivesInit.append(archive);
+        }
+    }
 }
 
 /*!
@@ -1013,21 +1084,22 @@ void Component::addDownloadableArchives(const QString& archives)
 void Component::removeDownloadableArchive(const QString &path)
 {
     Q_ASSERT(isFromOnlineRepository());
-    d->m_downloadableArchives.removeAll(path);
+    d->m_downloadableArchives.remove(
+        d->m_vars.value(scVersion) + path);
 }
 
 /*!
     Returns the archives to be downloaded from the online repository before installation.
     Should be called only once when the installation starts.
 */
-QStringList Component::downloadableArchives()
+QList<DownloadableArchive> Component::downloadableArchives()
 {
-    const QStringList downloadableArchives = d->m_downloadableArchivesVariable
-                .split(QInstaller::commaRegExp(), Qt::SkipEmptyParts);
-    foreach (const QString downloadableArchive, downloadableArchives)
-        addDownloadableArchive(downloadableArchive);
+    foreach (const DownloadableArchive &archive, d->m_downloadableArchivesInit) {
+        if (!archive.fileName.isEmpty())
+            d->m_downloadableArchives.insert(archive.fileName, archive);
+    }
 
-    return d->m_downloadableArchives;
+    return d->m_downloadableArchives.values();
 }
 
 /*!

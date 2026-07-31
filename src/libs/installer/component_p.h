@@ -7,6 +7,7 @@
 #define COMPONENT_P_H
 
 #include "qinstallerglobal.h"
+#include "downloadablearchive.h"
 
 #include <QJSValue>
 #include <QPointer>
@@ -57,8 +58,8 @@ public:
     QHash<QString, QString> m_vars;
     QList<Component*> m_childComponents;
     QList<Component*> m_allChildComponents;
-    QStringList m_downloadableArchives;
-    QString m_downloadableArchivesVariable;
+    QHash<QString, DownloadableArchive> m_downloadableArchives;
+    QList<DownloadableArchive> m_downloadableArchivesInit;
     QStringList m_stopProcessForUpdateRequests;
     QHash<QString, QPointer<QWidget> > m_userInterfaces;
     QHash<QString, QVariant> m_scriptHash;

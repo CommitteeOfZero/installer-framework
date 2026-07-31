@@ -24,8 +24,8 @@ SOURCES += $$PWD/job.cpp \
 
 HEADERS += $$PWD/updater.h \
     $$PWD/filedownloader.h \
-    $$PWD/filedownloader_p.h \
     $$PWD/filedownloaderfactory.h \
+    $$PWD/filedownloadrequest.h \
     $$PWD/localpackagehub.h \
     $$PWD/update.h \
     $$PWD/updateoperation.h \
@@ -39,6 +39,7 @@ HEADERS += $$PWD/updater.h \
 
 SOURCES += $$PWD/filedownloader.cpp \
     $$PWD/filedownloaderfactory.cpp \
+    $$PWD/filedownloadrequest.cpp \
     $$PWD/localpackagehub.cpp \
     $$PWD/update.cpp \
     $$PWD/updateoperation.cpp \

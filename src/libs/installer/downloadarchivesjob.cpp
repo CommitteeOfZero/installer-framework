@@ -42,17 +42,15 @@ DownloadArchivesJob::DownloadArchivesJob(PackageManagerCore *core, const QString
 */
 DownloadArchivesJob::~DownloadArchivesJob()
 {
-    for (auto i = m_downloaders.cbegin(), end = m_downloaders.cend(); i != end; ++i) {
-        if (i.value())
-            i.value()->deleteLater();
-    }
+    if (m_downloader)
+        m_downloader->deleteLater();
 }
 
 /*!
     Sets the \a archives to download. The first value of each pair contains the file name to register
     the file in the installer's internal file system, the second one the source url.
 */
-void DownloadArchivesJob::setArchivesToDownload(const QList<QPair<QString, QString>> &archives)
+void DownloadArchivesJob::setArchivesToDownload(const QList<DownloadableArchive> &archives)
 {
     m_archivesToDownload = archives;
 }
@@ -81,10 +79,9 @@ void DownloadArchivesJob::doStart()
 void DownloadArchivesJob::doCancel()
 {
     m_canceled = true;
-    for (auto i = m_downloaders.cbegin(), end = m_downloaders.cend(); i != end; ++i) {
-        if (i.value())
-            i.value()->reset();
-    }
+    if (m_downloader)
+        m_downloader->reset();
+
     emitFinishedWithError(Job::Canceled, tr("Download canceled."));
 }
 
@@ -95,10 +92,7 @@ void DownloadArchivesJob::fetchArchives()
         return;
     }
     setupDownloaders();
-    for (auto i = m_downloaders.cbegin(), end = m_downloaders.cend(); i != end; ++i) {
-        FileDownloader *downloader = i.value();
-        downloader->download(FileDownloader::DownloadType::ChecksumFile);
-    }
+    m_downloader->download();
 }
 
 void DownloadArchivesJob::networkDisconnected()
@@ -116,8 +110,7 @@ void DownloadArchivesJob::timerEvent(QTimerEvent *event)
         m_progressChangedTimerId = 0;
 
         quint64 currentDownloaded = 0;
-        for (auto i = m_downloaders.cbegin(), end = m_downloaders.cend(); i != end; ++i)
-            currentDownloaded += i.value()->bytesReceived();
+        currentDownloaded += m_downloader->bytesReceived();
         setProcessedAmount(currentDownloaded);
 
         // processedAmount might excess totalAmount if sha mismatch is detected
@@ -227,7 +220,7 @@ void DownloadArchivesJob::registerFile(const FileTaskItem &item)
 
 void DownloadArchivesJob::fileDownloaded(const QString &fileName, const QString &componentName)
 {
-    emit outputTextChanged(tr("Archive \"%1\" downloaded for component %2.")
+    emit outputTextChanged(tr("File \"%1\" downloaded for component %2.")
                                .arg(fileName, componentName));
 }
 
@@ -241,10 +234,8 @@ void DownloadArchivesJob::retryFileDownload(const QString &fileName)
 void DownloadArchivesJob::downloadCompleted()
 {
     // Wait for all downloaders to complete
-    for (auto i = m_downloaders.cbegin(), end = m_downloaders.cend(); i != end; ++i) {
-        if (!i.value()->dataDownloded())
-            return;
-    }
+    if (m_downloader && !m_downloader->dataDownloaded())
+        return;
     emitFinished();
     m_archivesToDownload.clear();
 }
@@ -252,10 +243,9 @@ void DownloadArchivesJob::downloadCompleted()
 void DownloadArchivesJob::sha1DownloadFinished()
 {
     // Wait for all downloaders to complete
-    for (auto i = m_downloaders.cbegin(), end = m_downloaders.cend(); i != end; ++i) {
-        if (!i.value()->sha1Downloded())
-            return;
-    }
+    if (!m_downloader->sha1Downloaded())
+        return;
+    
     // Start showing progress of downloaded data
     setTotalAmount(m_totalAmount);
 }
@@ -276,66 +266,105 @@ void DownloadArchivesJob::finishWithError(const QString &error)
 
 void DownloadArchivesJob::setupDownloaders()
 {
-    KDUpdater::FileDownloader *downloader = nullptr;
     const QString &queryString = m_core->value(scUrlQueryString);
-    for (QPair<QString,QString> item : std::as_const(m_archivesToDownload)) {
-        const QFileInfo fi = QFileInfo(item.first);
-        const Component *const component = m_core->componentByName(PackageManagerCore::checkableName(QFileInfo(fi.path()).fileName()));
+    for (const DownloadableArchive &item : std::as_const(m_archivesToDownload)) {
+        const QFileInfo fi(item.fileName);
+
+        const Component *const component =
+            m_core->componentByName(
+                PackageManagerCore::checkableName(QFileInfo(fi.path()).fileName()));
+
         if (!component) {
-            emit outputTextChanged(tr("Cannot find component for %1.").arg(QFileInfo(fi.path()).fileName()));
+            emit outputTextChanged(
+                tr("Cannot find component for %1.")
+                    .arg(QFileInfo(fi.path()).fileName()));
             continue;
         }
+
         QString fullQueryString;
         if (!queryString.isEmpty())
             fullQueryString = QLatin1String("?") + queryString;
-        const QUrl url(item.second + QLatin1String(".sha1") + fullQueryString);
-        const QString &scheme = url.scheme();
-        if (m_downloaders.contains(scheme)) {
-            downloader = m_downloaders.value(scheme);
-        } else {
-            downloader = FileDownloaderFactory::instance().create(scheme, this);
-            if (!downloader) {
-                emit outputTextChanged(tr("Scheme %1 not supported (URL: %2).").arg(scheme, url.toString()));
+
+        if(!m_downloader) {
+            m_downloader = FileDownloaderFactory::instance().create(this);
+            if (!m_downloader) {
                 return;
             }
-            downloader->setPackageManagerCore(m_core);
-            m_downloaders.insert(scheme, downloader);
+
+            m_downloader->setPackageManagerCore(m_core);
         }
-        QString fname = item.first;
-        QString target = (component->localTempPath() + QLatin1Char('/')
-            + component->name() + QLatin1Char('/') + fi.fileName() + QLatin1String(".sha1"));
 
-        QString source = url.toString();
-        if (scheme == QLatin1String("file"))
-            source = url.toLocalFile();
+        const QString archiveTarget = 
+            component->localTempPath()
+            + QLatin1Char('/')
+            + component->name()
+            + QLatin1Char('/')
+            + fi.fileName();
 
-        FileTaskItem taskItem(source, target);
-        taskItem.insert(TaskRole::Name, fname);
-        taskItem.insert(TaskRole::ComponentName, component->displayName());
+        QUrl archiveUrl(item.url);
+        archiveUrl.setQuery(fullQueryString.mid(1));
+        const QString archiveSource = (archiveUrl.scheme() == QLatin1String("file"))
+            ? archiveUrl.toLocalFile()
+            : archiveUrl.toString();
+
+        FileTaskItem archiveTaskItem(archiveSource, archiveTarget);
+
+        const QString target = 
+            component->localTempPath()
+            + QLatin1Char('/')
+            + component->name()
+            + QLatin1Char('/')
+            + fi.fileName();
+
+        QUrl sha1Url = item.sha1Url;
+        sha1Url.setQuery(fullQueryString.mid(1));
+
+        const QString sha1Target = target + QLatin1String(".sha1");
+
+        QString sha1Source = (sha1Url.scheme() == QLatin1String("file"))
+            ? sha1Url.toLocalFile()
+            : sha1Url.toString();
+
+        FileTaskItem shaTaskItem(sha1Source, sha1Target);        
+        
+        archiveTaskItem.insert(TaskRole::SourceFile, archiveSource);
+        archiveTaskItem.insert(TaskRole::TargetFile, target);
+        archiveTaskItem.insert(TaskRole::Scheme, archiveUrl.scheme());
+        archiveTaskItem.insert(TaskRole::Name, item.fileName);
+        archiveTaskItem.insert(TaskRole::ComponentName, component->displayName());
+
+        shaTaskItem.insert(TaskRole::SourceFile, sha1Source);
+        shaTaskItem.insert(TaskRole::TargetFile, sha1Target);
+        shaTaskItem.insert(TaskRole::Scheme, sha1Url.scheme());
+        shaTaskItem.insert(TaskRole::Name, QString(item.fileName + QLatin1String(".sha1")));
+        shaTaskItem.insert(TaskRole::ComponentName, component->displayName());
+
         QAuthenticator authenticator;
         authenticator.setUser(component->value(QLatin1String("username")));
         authenticator.setPassword(component->value(QLatin1String("password")));
-        taskItem.insert(TaskRole::Authenticator, QVariant::fromValue(authenticator));
+        archiveTaskItem.insert(TaskRole::Authenticator,
+            QVariant::fromValue(authenticator));
+        shaTaskItem.insert(TaskRole::Authenticator,
+            QVariant::fromValue(authenticator));
 
-        downloader->addFileItem(taskItem);
+        m_downloader->addRequest(FileDownloadRequest(archiveTaskItem,FileDownloadRequest::Role::RegularFile, archiveUrl.scheme()));
+        m_downloader->addRequest(FileDownloadRequest(shaTaskItem, FileDownloadRequest::Role::Checksum, sha1Url.scheme()));
     }
-    for (auto i = m_downloaders.cbegin(), end = m_downloaders.cend(); i != end; ++i) {
-        connect(i.value(), &FileDownloader::downloadAborted, this, &DownloadArchivesJob::downloadAborted,
-            Qt::QueuedConnection);
-        connect(i.value(), &FileDownloader::setProcessedAmount,
-                this, &DownloadArchivesJob::setTotalProcessedAmount, Qt::QueuedConnection);
-        connect(i.value(), &FileDownloader::sha1DownloadFinished,
-                this, &DownloadArchivesJob::sha1DownloadFinished, Qt::QueuedConnection);
-        connect(i.value(), &FileDownloader::registerFile,
-                this, &DownloadArchivesJob::registerFile, Qt::QueuedConnection);
-        connect(i.value(), &FileDownloader::fileDownloaded,
-                this, &DownloadArchivesJob::fileDownloaded, Qt::QueuedConnection);
-        connect(i.value(), &FileDownloader::retryFileDownload,
-                this, &DownloadArchivesJob::retryFileDownload, Qt::QueuedConnection);
-        connect(i.value(), &FileDownloader::downloadCompleted,
-                this, &DownloadArchivesJob::downloadCompleted, Qt::QueuedConnection);
-        connect(i.value(), &FileDownloader::networkDisconnected,
-                this, &DownloadArchivesJob::networkDisconnected, Qt::QueuedConnection);
-
-    }
+    connect(m_downloader, &FileDownloader::downloadAborted, this, &DownloadArchivesJob::downloadAborted,
+        Qt::QueuedConnection);
+    connect(m_downloader, &FileDownloader::setProcessedAmount,
+            this, &DownloadArchivesJob::setTotalProcessedAmount, Qt::QueuedConnection);
+    connect(m_downloader, &FileDownloader::sha1DownloadFinished,
+            this, &DownloadArchivesJob::sha1DownloadFinished, Qt::QueuedConnection);
+    connect(m_downloader, &FileDownloader::registerFile,
+            this, &DownloadArchivesJob::registerFile, Qt::QueuedConnection);
+    connect(m_downloader, &FileDownloader::fileDownloaded,
+            this, &DownloadArchivesJob::fileDownloaded, Qt::QueuedConnection);
+    connect(m_downloader, &FileDownloader::retryFileDownload,
+            this, &DownloadArchivesJob::retryFileDownload, Qt::QueuedConnection);
+    connect(m_downloader, &FileDownloader::downloadCompleted,
+            this, &DownloadArchivesJob::downloadCompleted, Qt::QueuedConnection);
+    connect(m_downloader, &FileDownloader::networkDisconnected,
+            this, &DownloadArchivesJob::networkDisconnected, Qt::QueuedConnection);
+    
 }

@@ -23,6 +23,7 @@ enum TaskRole
     TargetFile,
     Name,
     ComponentName,
+    Scheme,
     UserRole = 1000
 };
 }
@@ -43,6 +44,7 @@ public:
 
     QString source() const { return value(TaskRole::SourceFile).toString(); }
     QString target() const { return value(TaskRole::TargetFile).toString(); }
+    QString scheme() const { return value(TaskRole::Scheme).toString(); }
 };
 
 class FileTaskResult : public AbstractTaskData
@@ -76,6 +78,12 @@ public:
 
     QList<FileTaskItem> taskItems() const;
     void setTaskItem(const FileTaskItem &item);
+    void setProgressValueInBytes(bool progressInBytes);
+    bool progressValueInBytes() const;
+
+Q_SIGNALS:
+    void fileDownloaded(const QString &fileName, const QString &componentName);
+    void progressChanged(const quint64 progress);
 
 protected:
     void clearTaskItems();
@@ -89,6 +97,7 @@ private:
 private:
     QList<FileTaskItem> m_items;
     mutable QReadWriteLock m_lock;
+    bool m_progressValueInBytes;
 };
 
 }   // namespace QInstaller

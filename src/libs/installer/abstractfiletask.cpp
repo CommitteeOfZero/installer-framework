@@ -173,6 +173,16 @@ void AbstractFileTask::setTaskItem(const FileTaskItem &item)
     addTaskItem(item);
 }
 
+void AbstractFileTask::setProgressValueInBytes(bool progressInBytes)
+{
+    m_progressValueInBytes = progressInBytes;
+}
+
+bool AbstractFileTask::progressValueInBytes() const
+{
+    return m_progressValueInBytes;
+}
+
 
 // -- protected
 

@@ -237,7 +237,8 @@ void QInstallerTools::copyMetaData(const QString &_targetDir, const QString &met
             // list of current unused or later transformed tags
             QStringList blackList;
             blackList << QLatin1String("UserInterfaces") << QLatin1String("Translations") <<
-                         QLatin1String("Licenses") << QLatin1String("Name") << QLatin1String("Operations");
+                         QLatin1String("Licenses") << QLatin1String("Name") << QLatin1String("Operations") << 
+                         QLatin1String("DownloadableArchives");
 
             bool foundDefault = false;
             bool foundVirtual = false;
@@ -345,9 +346,12 @@ void QInstallerTools::copyMetaData(const QString &_targetDir, const QString &met
 
             // copy script files
             copyScriptFiles(childNodes, info, foundDownloadableArchives, targetDir);
-
-            // write DownloadableArchives tag if that is missed by the user
-            if (!foundDownloadableArchives && !info.copiedFiles.isEmpty()) {
+            if(foundDownloadableArchives) {
+                const QDomElement downloadableArchivesElement =
+                    package.firstChildElement(QLatin1String("DownloadableArchives"));
+                update.appendChild(downloadableArchivesElement.cloneNode());
+            } else if (!info.copiedFiles.isEmpty()) {
+                // write DownloadableArchives tag if that is missed by the user
                 QStringList realContentFiles;
                 foreach (const QString &filePath, info.copiedFiles) {
                     if (!filePath.endsWith(QLatin1String(".sha1"), Qt::CaseInsensitive)) {
@@ -678,13 +682,15 @@ PackageInfoVector QInstallerTools::createListOfRepositoryPackages(const QStringL
                         info.dependencies = c2Element.text()
                             .split(QInstaller::commaRegExp(), Qt::SkipEmptyParts);
                     else if (c2Element.tagName() == QInstaller::scDownloadableArchives) {
-                        QStringList names = c2Element.text()
-                            .split(QInstaller::commaRegExp(), Qt::SkipEmptyParts);
-                        foreach (const QString &name, names) {
-                            info.copiedFiles.append(QString::fromLatin1("%1/%3%2").arg(info.directory,
-                                name, info.version));
-                            info.copiedFiles.append(QString::fromLatin1("%1/%3%2.sha1").arg(info.directory,
-                                name, info.version));
+                        if(c2Element.isText()) {
+                            QStringList names = c2Element.text()
+                                .split(QInstaller::commaRegExp(), Qt::SkipEmptyParts);
+                            foreach (const QString &name, names) {
+                                info.copiedFiles.append(QString::fromLatin1("%1/%3%2").arg(info.directory,
+                                    name, info.version));
+                                info.copiedFiles.append(QString::fromLatin1("%1/%3%2.sha1").arg(info.directory,
+                                    name, info.version));
+                            }
                         }
                     }
                 }

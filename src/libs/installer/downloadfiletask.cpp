@@ -606,7 +606,6 @@ bool Downloader::isDownloadResumed()
 
 DownloadFileTask::DownloadFileTask(const QList<FileTaskItem> &items)
     : AbstractFileTask()
-    , m_progressInBytes(false)
 {
     setTaskItems(items);
 }
@@ -639,16 +638,6 @@ void DownloadFileTask::setAuthenticator(const QAuthenticator &authenticator)
 void DownloadFileTask::setProxyFactory(KDUpdater::FileDownloaderProxyFactory *factory)
 {
     m_proxyFactory.reset(factory);
-}
-
-void DownloadFileTask::setProgressValueInBytes(bool progressInBytes)
-{
-    m_progressInBytes = progressInBytes;
-}
-
-bool DownloadFileTask::progressValueInBytes() const
-{
-    return m_progressInBytes;
 }
 
 void DownloadFileTask::doTask(QFutureInterface<FileTaskResult> &fi)

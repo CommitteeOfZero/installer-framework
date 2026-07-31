@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 */
 
-#include "filedownloader_p.h"
+#include "filedownloader.h"
 #include "filedownloaderfactory.h"
+#include "filedownloadrequest.h"
 
 #include "downloadfiletask.h"
 #include "copyfiletask.h"
@@ -30,6 +31,8 @@
 #include <globals.h>
 #include <QHostInfo>
 #include <QFutureWatcher>
+#include <QtCore/QHash>
+#include <QtConcurrent/QtConcurrentRun>
 
 using namespace KDUpdater;
 using namespace QInstaller;
@@ -43,59 +46,59 @@ static constexpr uint scMaxRetries = 3;
     \class KDUpdater::FileDownloader
     \internal
 */
-
-
 struct KDUpdater::FileDownloader::Private
 {
     Private()
-        : m_factory(0)
+        : m_core(nullptr)
+        , m_factory(nullptr)
         , m_bytesReceived(0)
         , m_allBytesReceived(0)
         , m_dataDownloaded(false)
         , m_sha1Downloaded(false)
         , m_aborted(false)
         , m_retryCount(scMaxRetries)
+        , m_downloadableChunkSize(100)
     {
+        const QByteArray chunkSizeEnv = qgetenv("IFW_DOWNLOAD_SIZE");
+        if (!chunkSizeEnv.isEmpty()) {
+            const int chunkSize = QString::fromLocal8Bit(chunkSizeEnv).toInt();
+            if (chunkSize > 0)
+                m_downloadableChunkSize = chunkSize;
+        }
     }
 
     ~Private()
     {
         delete m_factory;
+        qDeleteAll(m_activeWatchers);
     }
 
     QString scheme;
 
     PackageManagerCore *m_core;
     FileDownloaderProxyFactory *m_factory;
-    QList<FileTaskItem> m_packages;
+    QList<FileDownloadRequest> m_pendingRequests;
+    QHash<FileDownloadRequest::Role, QList<FileTaskResult>> m_results;
+    QHash<FileDownloadRequest::Role, int> m_pendingTasks;
+    QList<QFutureWatcher<FileTaskResult> *> m_activeWatchers;
+    QHash<QString, QPair<QString, QString>> m_checksumSourceByArchiveTarget;
+
+
     quint64 m_bytesReceived;
     quint64 m_allBytesReceived;
     bool m_dataDownloaded;
     bool m_sha1Downloaded;
     bool m_aborted;
     int m_retryCount;
+    int m_downloadableChunkSize;
 };
 
-KDUpdater::FileDownloader::FileDownloader(const QString &scheme, QObject *parent)
+KDUpdater::FileDownloader::PrivatePtr::~PrivatePtr() {}
+
+KDUpdater::FileDownloader::FileDownloader(QObject *parent)
     : QObject(parent)
-    , d(new Private)
-    , m_downloadableChunkSize(100)
 {
-    QByteArray downloadableChunkSize = qgetenv("IFW_DOWNLOAD_SIZE");
-    if (!downloadableChunkSize.isEmpty()) {
-        int chunkSize = QString::fromLocal8Bit(downloadableChunkSize).toInt();
-        if (chunkSize > 0)
-            m_downloadableChunkSize = chunkSize;
-    }
-    d->scheme = scheme;
-    connect(&m_shaDownloadTask, &QFutureWatcherBase::finished, this, &FileDownloader::shaDownloadTaskFinished);
-    connect(&m_archiveDownloadTask, &QFutureWatcherBase::finished, this, &FileDownloader::archiveDownloadTaskFinished);
-
-}
-
-KDUpdater::FileDownloader::~FileDownloader()
-{
-    delete d;
+    d.reset(new Private);
 }
 
 void FileDownloader::setDownloadAborted(const JobError error, const QString &errorStr)
@@ -106,48 +109,8 @@ void FileDownloader::setDownloadAborted(const JobError error, const QString &err
 
 void KDUpdater::FileDownloader::setDownloadCompleted()
 {
-    setDataDownloded(true);
-    emit downloadCompleted(scheme());
-}
-
-void KDUpdater::FileDownloader::resetFileItems()
-{
-    d->m_packages.clear();
-}
-
-void KDUpdater::FileDownloader::addFileItem(FileTaskItem item)
-{
-    d->m_packages.append(item);
-}
-
-void KDUpdater::FileDownloader::addFileItems(QList<FileTaskItem> items)
-{
-    d->m_packages = items;
-}
-
-QList<FileTaskItem> KDUpdater::FileDownloader::fileItems() const
-{
-    return d->m_packages;
-}
-
-QList<FileTaskItem> KDUpdater::FileDownloader::fileItemsInChunks()
-{
-    QList<FileTaskItem> taskItems = fileItems();
-    int chunkSize = qMin(taskItems.length(), m_downloadableChunkSize);
-    QList<FileTaskItem> tempPackages = taskItems.mid(0, chunkSize);
-    if (tempPackages.length() > 0)
-        addFileItems(taskItems.mid(chunkSize, taskItems.length()));
-    return tempPackages;
-}
-
-QString KDUpdater::FileDownloader::scheme() const
-{
-    return d->scheme;
-}
-
-void KDUpdater::FileDownloader::setScheme(const QString &scheme)
-{
-    d->scheme = scheme;
+    setDataDownloaded(true);
+    emit downloadCompleted();
 }
 
 void KDUpdater::FileDownloader::setPackageManagerCore(PackageManagerCore *core)
@@ -155,33 +118,159 @@ void KDUpdater::FileDownloader::setPackageManagerCore(PackageManagerCore *core)
     d->m_core = core;
 }
 
-void KDUpdater::FileDownloader::download(DownloadType downloadType)
+void FileDownloader::resetRequests()
 {
-    QMetaObject::invokeMethod(this, "doDownload", Qt::QueuedConnection, Q_ARG(DownloadType, downloadType));
+    d->m_pendingRequests.clear();
 }
 
-template <typename AbstractTask>
-void KDUpdater::FileDownloader::setupFileTask(AbstractTask *const task, const DownloadType downloadType)
+void FileDownloader::addRequest(const FileDownloadRequest &request)
 {
-    setDataDownloded(false);
-    if (downloadType == RegularFile)
-        connect(task, &AbstractTask::progressChanged, this, &KDUpdater::FileDownloader::setProgress);
-    connect(task, &AbstractTask::fileDownloaded, this, &KDUpdater::FileDownloader::fileDownloaded);
+    d->m_pendingRequests.append(request);
+}
+
+void FileDownloader::addRequests(const QList<FileDownloadRequest> &requests)
+{
+    d->m_pendingRequests.append(requests);
+}
+
+QList<FileDownloadRequest> FileDownloader::requests() const
+{
+    return d->m_pendingRequests;
+}
+
+QList<FileDownloadRequest> FileDownloader::takeNextChunk(
+    FileDownloadRequest::Role role,
+    FileDownloadRequest::TransferMethod transferMethod)
+{
+    QList<FileDownloadRequest> chunk;
+
+    auto it = d->m_pendingRequests.begin();
+    while (it != d->m_pendingRequests.end() && chunk.size() < d->m_downloadableChunkSize) {
+        if (it->role == role && it->transferMethod == transferMethod) {
+            chunk.append(*it);
+            it = d->m_pendingRequests.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    return chunk;
+}
+
+void FileDownloader::download()
+{
+    QMetaObject::invokeMethod(this, [this]() {
+        setDataDownloaded(false);
+        setSha1Downloaded(false);
+        d->m_results.clear();
+        d->m_pendingTasks.clear();
+        d->m_checksumSourceByArchiveTarget.clear();
+        d->m_retryCount = scMaxRetries;
+        startStage(FileDownloadRequest::Role::Checksum);
+    }, Qt::QueuedConnection);
+}
+
+bool FileDownloader::startStage(FileDownloadRequest::Role role)
+{
+    if (isDownloadAborted())
+        return false;
+
+    QHash<FileDownloadRequest::TransferMethod, QList<FileDownloadRequest>> chunksByMethod;
+
+    auto it = d->m_pendingRequests.begin();
+    while (it != d->m_pendingRequests.end()) {
+        if (it->role != role) {
+            ++it;
+            continue;
+        }
+        chunksByMethod[it->transferMethod].append(*it);
+        it = d->m_pendingRequests.erase(it);
+    }
+
+    bool started = false;
+    for(const auto &[method, chunk] : std::as_const(chunksByMethod).asKeyValueRange()) {
+        if (chunk.isEmpty())
+            continue;
+
+        auto factory = FileDownloadRequest::taskFactoryForMethod(method);
+        if (!factory) {
+            setDownloadAborted(QInstaller::DownloadError,
+                tr("No download handler registered for scheme \"%1\".").arg(it->taskItem.scheme()));
+            return started;
+        }
+
+        QList<FileTaskItem> items;
+        items.reserve(chunk.size());
+        for (const auto &request : chunk)
+            items.append(request.taskItem);
+
+        AbstractFileTask *task = factory(items);
+        setupFileTask(task, role, chunk.first().transferMethod);
+        started = true;
+    }
+
+    return started;
+}
+
+void FileDownloader::setupFileTask(AbstractFileTask *task,
+                                   FileDownloadRequest::Role role,
+                                   FileDownloadRequest::TransferMethod transferMethod)
+{
+    Q_UNUSED(transferMethod)
+
+    if (role == FileDownloadRequest::Role::RegularFile) {
+        connect(task,
+                &AbstractFileTask::progressChanged,
+                this,
+                &FileDownloader::setProgress);
+    }
+
+    connect(task,
+            &AbstractFileTask::fileDownloaded,
+            this,
+            &FileDownloader::fileDownloaded);
+
     task->setProgressValueInBytes(true);
-    if (downloadType == DownloadType::ChecksumFile)
-        m_shaDownloadTask.setFuture(QtConcurrent::run(&AbstractTask::doTask, task));
-    else
-        m_archiveDownloadTask.setFuture(QtConcurrent::run(&AbstractTask::doTask, task));
+
+    auto *watcher = new QFutureWatcher<FileTaskResult>(this);
+    d->m_activeWatchers.append(watcher);
+
+    ++d->m_pendingTasks[role];
+
+    connect(watcher, &QFutureWatcher<FileTaskResult>::finished, this, [this, watcher, role]() {
+        onTaskFinished(watcher, role);
+    });
+
+    auto future = QtConcurrent::run(&AbstractTask<FileTaskResult>::doTask, static_cast<AbstractTask<FileTaskResult> *>(task));
+    watcher->setFuture(future);
 }
 
 void KDUpdater::FileDownloader::resetTasks()
 {
-    try {
-        m_shaDownloadTask.cancel();
-        m_shaDownloadTask.waitForFinished();
-        m_archiveDownloadTask.cancel();
-        m_archiveDownloadTask.waitForFinished();
-    } catch (...) {}
+    for (auto *watcher : std::as_const(d->m_activeWatchers)) {
+        try {
+            watcher->cancel();
+            watcher->waitForFinished();
+        } catch (...) {
+        }
+    }
+    qDeleteAll(d->m_activeWatchers);
+    d->m_activeWatchers.clear();
+    d->m_pendingTasks.clear();
+}
+
+void FileDownloader::reset()
+{
+    resetTasks();
+    resetRequests();
+    d->m_results.clear();
+    d->m_checksumSourceByArchiveTarget.clear();
+    d->m_bytesReceived = 0;
+    d->m_allBytesReceived = 0;
+    d->m_retryCount = scMaxRetries;
+    d->m_aborted = false;
+    setDataDownloaded(false);
+    setSha1Downloaded(false);
 }
 
 void KDUpdater::FileDownloader::setProgress(quint64 bytesReceived)
@@ -195,125 +284,156 @@ bool KDUpdater::FileDownloader::isDownloadAborted() const
     return d->m_aborted;
 }
 
-bool KDUpdater::FileDownloader::dataDownloded() const
+bool KDUpdater::FileDownloader::dataDownloaded() const
 {
     return d->m_dataDownloaded;
 }
 
-void KDUpdater::FileDownloader::setDataDownloded(bool downloaded)
+void KDUpdater::FileDownloader::setDataDownloaded(bool downloaded)
 {
     d->m_dataDownloaded = downloaded;
 }
 
-bool KDUpdater::FileDownloader::sha1Downloded() const
+bool KDUpdater::FileDownloader::sha1Downloaded() const
 {
     return d->m_sha1Downloaded;
 }
 
-void KDUpdater::FileDownloader::setSha1Downloded(bool downloaded)
+void KDUpdater::FileDownloader::setSha1Downloaded(bool downloaded)
 {
     d->m_sha1Downloaded = downloaded;
 }
 
-void KDUpdater::FileDownloader::shaDownloadTaskFinished()
+void FileDownloader::onTaskFinished(QFutureWatcher<FileTaskResult> *watcher,
+                                    FileDownloadRequest::Role role)
 {
+    d->m_activeWatchers.removeOne(watcher);
+    watcher->deleteLater();
+    
+    --d->m_pendingTasks[role];
+    
     try {
-        m_shaDownloadTask.waitForFinished();
-        m_shaDownloadResult.append(m_shaDownloadTask.future().results());
-
-        if (!doDownload(DownloadType::ChecksumFile)) {
-            resetFileItems();
-            foreach (const FileTaskResult &result, m_shaDownloadResult) {
-                FileTaskItem item = result.taskItem();
-                QString sourceUrl = item.source().remove(QLatin1String(".sha1"));
-                QString targetUrl = item.target().remove(QLatin1String(".sha1"));
-                item.insert(TaskRole::SourceFile, sourceUrl);
-                item.insert(TaskRole::TargetFile, targetUrl);
-                addFileItem(item);
-            }
-            //SHA files has been downloaded, now setup the archives to download
-            setSha1Downloded(true);
-            emit sha1DownloadFinished();
-            doDownload(DownloadType::RegularFile);
-        }
-    }  catch (const AuthenticationRequiredException &e) {
+        watcher->waitForFinished();
+        d->m_results[role].append(watcher->future().results());
+    } catch (const AuthenticationRequiredException &e) {
         if (e.type() == AuthenticationRequiredException::Type::Proxy) {
             qCWarning(QInstaller::lcInstallerInstallLog) << e.message();
             PackageManagerProxyFactory *factory = d->m_core->proxyFactory();
             if (factory->askProxyCredentials(e.proxy())) {
                 d->m_core->setProxyFactory(factory);
-                doDownload(DownloadType::ChecksumFile);
+                startStage(role);
             } else {
                 reset();
                 setDownloadAborted(QInstaller::DownloadError, tr("Missing proxy credentials."));
             }
         }
+        return;
     } catch (const TaskException &e) {
         setDownloadAborted(QInstaller::DownloadError, e.message());
+        return;
     } catch (const QUnhandledException &e) {
         setDownloadAborted(QInstaller::DownloadError, QLatin1String(e.what()));
+        return;
     } catch (...) {
         setDownloadAborted(QInstaller::DownloadError, tr("Unknown exception during download."));
+        return;
     }
+
+    if (startStage(role))
+        return;
+
+    if (d->m_pendingTasks.value(role) > 0)
+        return;
+
+    if (role == FileDownloadRequest::Role::Checksum)
+        shaDownloadFinished();
+    else
+        archiveDownloadFinished();
 }
 
-void KDUpdater::FileDownloader::archiveDownloadTaskFinished()
+void FileDownloader::shaDownloadFinished()
 {
-    try {
-        m_archiveDownloadTask.waitForFinished();
+    const auto checksumResults = d->m_results.value(FileDownloadRequest::Role::Checksum);
+    for (const FileTaskResult &result : checksumResults) {
+        const FileTaskItem checksumItem = result.taskItem();
+        const QString expectedTarget = checksumItem.target().chopped(5); // strip ".sha1"
 
-        m_archiveDownloadResult.append(m_archiveDownloadTask.future().results());
-        d->m_allBytesReceived = d->m_bytesReceived;
-        QList<FileTaskItem> failedItems;
-        if (!doDownload(DownloadType::RegularFile)) {
-            foreach (const FileTaskResult &result, m_archiveDownloadResult) {
-                FileTaskItem item = result.value(TaskRole::TaskItem).value<FileTaskItem>();
-                QByteArray checksum = result.value(TaskRole::Checksum).toByteArray().toHex();
-                const QByteArray &expectedChecksum = item.value(TaskRole::Checksum).toByteArray();
-
-                if (expectedChecksum != checksum) {
-                    QString sourceUrl = item.source().append(QLatin1String(".sha1"));
-                    QString targetUrl = item.target().append(QLatin1String(".sha1"));
-                    item.insert(TaskRole::SourceFile, sourceUrl);
-                    item.insert(TaskRole::TargetFile, targetUrl);
-                    failedItems.append(item);
-                    qCWarning(QInstaller::lcInstallerInstallLog) << tr("Hash verification error while "
-                        "downloading %1. This can be a temporary error, retrying download.\n\n"
-                        "Expected: %2 \nDownloaded: %3").arg(item.source(),
-                        QString::fromLatin1(expectedChecksum), QString::fromLatin1(checksum));
-                } else {
-                    emit registerFile(item);
-                }
-            }
-        } else {
-            // Wait for all items to be downloaded
-            return;
-        }
-        if (failedItems.count() == 0) {
-            setDownloadCompleted();
-        } else {
-            --d->m_retryCount;
-            if (d->m_retryCount <= 0) {
-                setDownloadAborted(QInstaller::DownloadError, tr("Cannot verify Hash"));
-            } else {
-                m_shaDownloadResult.clear();
-                m_archiveDownloadResult.clear();
-                resetFileItems();
-                addFileItems(failedItems);
-                for (const FileTaskItem &item : std::as_const(failedItems)) {
-                    QFileInfo fi(item.target());
-                    emit retryFileDownload(fi.fileName());
-                }
-                doDownload(DownloadType::ChecksumFile);
+        for (auto &request : d->m_pendingRequests) {
+            qDebug() << "Matching checksum for request: " << request.taskItem.target() << " with expected target: " << expectedTarget;
+            if (request.role == FileDownloadRequest::Role::RegularFile
+                    && request.taskItem.target() == expectedTarget) {
+                request.taskItem.insert(TaskRole::Checksum, checksumItem.value(TaskRole::Checksum));
+                d->m_checksumSourceByArchiveTarget.insert(expectedTarget, qMakePair(checksumItem.source(), checksumItem.scheme()));
+                break;
             }
         }
-    }  catch (const TaskException &e) {
-        setDownloadAborted(QInstaller::DownloadError, e.message());
-    } catch (const QUnhandledException &e) {
-        setDownloadAborted(QInstaller::DownloadError, QLatin1String(e.what()));
-    } catch (...) {
-        setDownloadAborted(QInstaller::DownloadError, tr("Unknown exception during download."));
     }
+    d->m_results.remove(FileDownloadRequest::Role::Checksum);
+
+    setSha1Downloaded(true);
+    emit sha1DownloadFinished();
+
+    startStage(FileDownloadRequest::Role::RegularFile);
+}
+
+void FileDownloader::archiveDownloadFinished()
+{
+    d->m_allBytesReceived = d->m_bytesReceived;
+
+    QList<FileDownloadRequest> failedRequests;
+    const auto archiveResults = d->m_results.value(FileDownloadRequest::Role::RegularFile);
+    foreach (const FileTaskResult &result, archiveResults) {
+        FileTaskItem item = result.value(TaskRole::TaskItem).value<FileTaskItem>();
+        const QByteArray checksum = result.value(TaskRole::Checksum).toByteArray().toHex();
+        const QByteArray expectedChecksum = item.value(TaskRole::Checksum).toByteArray();
+
+        if (expectedChecksum != checksum) {
+            qCWarning(QInstaller::lcInstallerInstallLog) << tr("Hash verification error while "
+                "downloading %1. This can be a temporary error, retrying download.\n\n"
+                "Expected: %2 \nDownloaded: %3").arg(item.source(),
+                QString::fromLatin1(expectedChecksum), QString::fromLatin1(checksum));
+
+            auto [checksumSource, checksumScheme] = d->m_checksumSourceByArchiveTarget.value(item.target());
+
+            FileTaskItem sha1Item = item;
+            sha1Item.insert(TaskRole::SourceFile, checksumSource);
+            sha1Item.insert(TaskRole::TargetFile, QString(item.target() + QLatin1String(".sha1")));
+            sha1Item.insert(TaskRole::Scheme, checksumScheme);
+
+            FileDownloadRequest sha1Request(sha1Item, FileDownloadRequest::Role::Checksum, checksumScheme);
+
+            failedRequests.append(sha1Request);
+
+            FileDownloadRequest archiveRequest(item, FileDownloadRequest::Role::RegularFile, item.scheme());
+            failedRequests.append(archiveRequest);
+        } else {
+            emit registerFile(item);
+        }
+    }
+    d->m_results.remove(FileDownloadRequest::Role::RegularFile);
+
+    if (failedRequests.isEmpty()) {
+        setDownloadCompleted();
+        return;
+    }
+
+    --d->m_retryCount;
+    if (d->m_retryCount <= 0) {
+        setDownloadAborted(QInstaller::DownloadError, tr("Cannot verify Hash"));
+        return;
+    }
+
+    resetRequests();
+    addRequests(failedRequests);
+
+    for (const FileDownloadRequest &request : std::as_const(failedRequests)) {
+        if (request.role != FileDownloadRequest::Role::Checksum)
+            continue;
+        QFileInfo fi(request.taskItem.target());
+        emit retryFileDownload(fi.fileName());
+    }
+
+    startStage(FileDownloadRequest::Role::Checksum);
 }
 
 FileDownloaderProxyFactory *KDUpdater::FileDownloader::proxyFactory() const
@@ -334,89 +454,29 @@ quint64 FileDownloader::bytesReceived() const
     return d->m_bytesReceived;
 }
 
-// -- KDUpdater::LocalFileDownloader
-
-/*!
-    \inmodule kdupdater
-    \class KDUpdater::LocalFileDownloader
-    \brief The LocalFileDownloader class is used to copy files from the local
-    file system.
-    \internal
-*/
-
-KDUpdater::LocalFileDownloader::LocalFileDownloader(QObject *parent)
-    : KDUpdater::FileDownloader(QLatin1String("file"), parent)
+CopyFileTask *FileDownloader::createLocalTask(const QList<FileDownloadRequest> &requests)
 {
+    QList<FileTaskItem> items;
+
+    for (const auto &request : requests)
+        items.append(request.taskItem);
+
+    return new CopyFileTask(items);
 }
 
-KDUpdater::LocalFileDownloader::~LocalFileDownloader()
+DownloadFileTask *FileDownloader::createNetworkTask(const QList<FileDownloadRequest> &requests)
 {
-}
+    QList<FileTaskItem> items;
 
-bool KDUpdater::LocalFileDownloader::doDownload(DownloadType downloadType)
-{
-    if (isDownloadAborted())
-        return false;
+    for (const auto &request : requests)
+        items.append(request.taskItem);
 
-    const QList<FileTaskItem> fileItemChunk = fileItemsInChunks();
-    if (fileItemChunk.length() > 0) {
-        CopyFileTask *const downloadTask = new CopyFileTask(fileItemChunk);
-        setupFileTask(downloadTask, downloadType);
-        return true;
-    }
-    return false;
-}
+    auto *task = new DownloadFileTask(items);
 
-KDUpdater::LocalFileDownloader *KDUpdater::LocalFileDownloader::clone(QObject *parent) const
-{
-    return new LocalFileDownloader(parent);
-}
+    connect(task,
+            &DownloadFileTask::networkDisconnected,
+            this,
+            &FileDownloader::networkDisconnected);
 
-void LocalFileDownloader::reset()
-{
-    resetTasks();
-}
-
-// -- KDUpdater::HttpDownloader
-
-/*!
-    \inmodule kdupdater
-    \class KDUpdater::HttpDownloader
-    \brief The HttpDownloader class is used to download files over FTP, HTTP, or HTTPS.
-    \internal
-*/
-
-KDUpdater::HttpDownloader::HttpDownloader(QObject *parent)
-    : KDUpdater::FileDownloader(QLatin1String("http"), parent)
-{
-
-}
-
-KDUpdater::HttpDownloader::~HttpDownloader()
-{
-}
-
-bool KDUpdater::HttpDownloader::doDownload(DownloadType downloadType)
-{
-    if (isDownloadAborted())
-        return false;
-
-    const QList<FileTaskItem> fileItemChunk = fileItemsInChunks();
-    if (fileItemChunk.length() > 0) {
-        DownloadFileTask *const downloadTask = new DownloadFileTask(fileItemChunk);
-        connect(downloadTask, &DownloadFileTask::networkDisconnected, this, &KDUpdater::HttpDownloader::networkDisconnected);
-        setupFileTask(downloadTask, downloadType);
-        return true;
-    }
-    return false;
-}
-
-KDUpdater::HttpDownloader *KDUpdater::HttpDownloader::clone(QObject *parent) const
-{
-    return new HttpDownloader(parent);
-}
-
-void KDUpdater::HttpDownloader::reset()
-{
-    resetTasks();
+    return task;
 }

@@ -8,6 +8,7 @@
 
 #include "job.h"
 #include "packagemanagercore.h"
+#include "downloadablearchive.h"
 #include <QtCore/QPair>
 #include <QtCore/QElapsedTimer>
 
@@ -30,7 +31,7 @@ public:
     ~DownloadArchivesJob();
 
     int numberOfDownloads() const { return m_archivesDownloaded; }
-    void setArchivesToDownload(const QList<QPair<QString, QString>> &archives);
+    void setArchivesToDownload(const QList<DownloadableArchive> &archives);
     void setExpectedTotalSize(quint64 total);
 
 Q_SIGNALS:
@@ -66,10 +67,10 @@ private:
 
 private:
     PackageManagerCore *m_core;
-    QHash<QString, KDUpdater::FileDownloader*> m_downloaders;
+    KDUpdater::FileDownloader *m_downloader = nullptr;
 
     int m_archivesDownloaded;
-    QList<QPair<QString, QString> > m_archivesToDownload;
+    QList<DownloadableArchive> m_archivesToDownload;
 
     bool m_canceled;
     int m_progressChangedTimerId;

@@ -34,13 +34,14 @@ public:
 
     void parseFile(const QString &updateXmlFile);
     bool parsePackageUpdateElement(QXmlStreamReader &reader);
-
+    
     void setInvalidContentError(const QString &detail);
-
-private:
+    
+    private:
     void processLocalizedTag(QXmlStreamReader &reader, QHash<QString, QVariant> &info) const;
     void parseOperations(QXmlStreamReader &reader, QHash<QString, QVariant> &info) const;
     void parseLicenses(QXmlStreamReader &reader, QHash<QString, QVariant> &info) const;
+    void parseDownloadableArchives(QXmlStreamReader &reader, QHash<QString, QVariant> &info) const;
 };
 
 } // namespace KDUpdater

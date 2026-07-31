@@ -329,7 +329,6 @@ void LoggingHandler::printPackageInformation(const PackagesList &matchedPackages
             stream.writeAttribute(QLatin1String("compressedsize"), package->data(QLatin1String("CompressedSize")).toString());
             stream.writeAttribute(QLatin1String("uncompressedsize"), package->data(QLatin1String("UncompressedSize")).toString());
             stream.writeAttribute(QLatin1String("releaseDate"), package->data(scReleaseDate).toString());
-            stream.writeAttribute(QLatin1String("downloadableArchives"), package->data(scDownloadableArchives).toString());
             stream.writeAttribute(QLatin1String("licenses"), package->data(QLatin1String("Licenses")).toString());
             stream.writeAttribute(QLatin1String("script"), package->data(scScript).toString());
             stream.writeAttribute(QLatin1String("sortingPriority"), package->data(scSortingPriority).toString());

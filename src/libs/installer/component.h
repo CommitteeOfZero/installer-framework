@@ -8,6 +8,7 @@
 
 #include "constants.h"
 #include "component_p.h"
+#include "downloadablearchive.h"
 #include "qinstallerglobal.h"
 
 #include <QtCore/QDir>
@@ -127,10 +128,11 @@ public:
     Q_INVOKABLE bool addElevatedOperation(QQmlV4Function *args);
     bool addElevatedOperation(const QString &operation, const QStringList &parameters);
 
-    QStringList downloadableArchives();
+    QList<DownloadableArchive> downloadableArchives();
     Q_INVOKABLE void addDownloadableArchive(const QString &path);
+    Q_INVOKABLE void addDownloadableArchive(const QString& path, const QString &url);
     Q_INVOKABLE void removeDownloadableArchive(const QString &path);
-    void addDownloadableArchives(const QString& archives);
+    void addDownloadableArchives(const QVariant &archives);
 
     QStringList stopProcessForUpdateRequests() const;
     Q_INVOKABLE void addStopProcessForUpdateRequest(const QString &process);
