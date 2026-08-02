@@ -218,13 +218,15 @@ public:
 
     Q_INVOKABLE bool isFileExtensionRegistered(const QString &extension) const;
     Q_INVOKABLE bool fileExists(const QString &filePath) const;
+    Q_INVOKABLE qint64 fileSize(const QString &filePath) const;
+    Q_INVOKABLE int folderFileCount(const QString &folderPath) const;
     Q_INVOKABLE QString readFile(const QString &filePath, const QString &codecName) const;
     Q_INVOKABLE QString readConsoleLine(const QString &title = QString(), qint64 maxlen = 0) const;
 
     Q_INVOKABLE QString toNativeSeparators(const QString &path);
     Q_INVOKABLE QString fromNativeSeparators(const QString &path);
 
-    bool installationAllowedToDirectory(const QString &targetDirectory);
+    Q_INVOKABLE bool installationAllowedToDirectory(const QString &targetDirectory);
     QString targetDirWarning(const QString &targetDirectory) const;
 
 public:

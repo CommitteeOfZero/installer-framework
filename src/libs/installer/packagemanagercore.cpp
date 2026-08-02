@@ -1031,6 +1031,34 @@ bool PackageManagerCore::fileExists(const QString &filePath) const
 {
     return QFileInfo::exists(filePath);
 }
+/*!
+    Returns the size of the file \a filePath in bytes; otherwise returns -1.
+
+    \note If the file is a symlink that points to a non existing
+     file, -1 is returned.
+
+    \sa {installer::fileExists}{installer.fileExists}
+
+ */
+qint64 PackageManagerCore::fileSize(const QString &filePath) const
+{
+    return QFileInfo(filePath).size();
+}
+
+/*!
+    Returns the number of files in the directory \a folderPath; otherwise returns -1.
+
+    \note If the directory does not exist or an error occurs while accessing it, -1 is returned.
+
+    \sa {installer::folderFileCount}{installer.folderFileCount}
+ */
+int PackageManagerCore::folderFileCount(const QString &folderPath) const
+{
+    QDir dir(folderPath);
+    if (!dir.exists())
+        return -1;
+    return dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count();
+}
 
 /*!
     Returns the contents of the file \a filePath using the encoding specified
