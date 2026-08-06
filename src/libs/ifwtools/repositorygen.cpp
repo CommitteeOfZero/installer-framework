@@ -245,6 +245,7 @@ void QInstallerTools::copyMetaData(const QString &_targetDir, const QString &met
             bool foundDisplayName = false;
             bool foundDownloadableArchives = false;
             bool foundCheckable = false;
+            bool foundUncompressedSize = false;
             const QDomNode package = packageXml.firstChildElement(QLatin1String("Package"));
             const QDomNodeList childNodes = package.childNodes();
             for (int i = 0; i < childNodes.count(); ++i) {
@@ -261,6 +262,8 @@ void QInstallerTools::copyMetaData(const QString &_targetDir, const QString &met
                     foundDownloadableArchives = true;
                 if (key == QLatin1String("Checkable"))
                     foundCheckable = true;
+                if (key == QLatin1String("UncompressedSize"))
+                    foundUncompressedSize = true;
                 if (node.isComment() || blackList.contains(key))
                     continue;   // just skip comments and some tags...
 
@@ -331,7 +334,11 @@ void QInstallerTools::copyMetaData(const QString &_targetDir, const QString &met
             }
 
             QDomElement fileElement = doc.createElement(QLatin1String("UpdateFile"));
-            fileElement.setAttribute(QLatin1String("UncompressedSize"), componentSize);
+            if(foundUncompressedSize)  {
+                auto userProvidedSize = package.firstChildElement(QLatin1String("UncompressedSize")).text();
+                fileElement.setAttribute(QLatin1String("UncompressedSize"), userProvidedSize);
+            } else
+                fileElement.setAttribute(QLatin1String("UncompressedSize"), componentSize);
             fileElement.setAttribute(QLatin1String("CompressedSize"), compressedComponentSize);
             // adding the OS attribute to be compatible with old sdks
             fileElement.setAttribute(QLatin1String("OS"), QLatin1String("Any"));
