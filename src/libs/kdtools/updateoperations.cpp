@@ -159,6 +159,8 @@ bool CopyOperation::performOperation()
         }
     }
 
+    emit outputTextChanged(tr("Copying file \"%1\" to \"%2\".").arg(QDir::toNativeSeparators(source),
+                                                                    QDir::toNativeSeparators(destination)));
     const bool copied = sourceFile.copy(destination);
     if (!copied) {
         setError(UserDefinedError);
@@ -166,6 +168,7 @@ bool CopyOperation::performOperation()
                            QDir::toNativeSeparators(source), QDir::toNativeSeparators(destination),
                            sourceFile.errorString()));
     }
+    emit progressChanged(1);
     return copied;
 }
 
@@ -181,6 +184,7 @@ bool CopyOperation::undoOperation()
         destination = destination + QDir::separator() + QFileInfo(source).fileName();
 
     QFile destFile(destination);
+    emit outputTextChanged(tr("Removing file \"%1\".").arg(QDir::toNativeSeparators(destination)));
     // first remove the dest
     if (destFile.exists() && !destFile.remove()) {
         setError(UserDefinedError, tr("Cannot delete file \"%1\": %2").arg(
@@ -190,15 +194,21 @@ bool CopyOperation::undoOperation()
 
     // no backup was done:
     // the copy destination file wasn't existing yet - that's no error
-    if (!hasValue(QLatin1String("backupOfExistingDestination")))
+    if (!hasValue(QLatin1String("backupOfExistingDestination"))) {
+        emit progressChanged(1);
         return true;
+    }
 
     QFile backupFile(value(QLatin1String("backupOfExistingDestination")).toString());
     // otherwise we have to copy the backup back:
+    emit outputTextChanged(tr("Restoring backup of file \"%1\".").arg(
+        QDir::toNativeSeparators(destination)));
     const bool success = backupFile.rename(destination);
     if (!success)
         setError(UserDefinedError, tr("Cannot restore backup file into \"%1\": %2").arg(
                      QDir::toNativeSeparators(destination), backupFile.errorString()));
+    else
+        emit progressChanged(1);
     return success;
 }
 
@@ -273,28 +283,34 @@ bool MoveOperation::performOperation()
         return false;
 
     const QStringList args = arguments();
+    QFile file(args.at(0));
     const QString dest = args.at(1);
+    emit outputTextChanged(tr("Moving \"%1\" to \"%2\".").arg(
+        QDir::toNativeSeparators(args.at(0)), 
+        QDir::toNativeSeparators(dest)));
     // If destination file exists, then we cannot use QFile::copy() because it does not overwrite an existing
     // file. So we remove the destination file.
     if (QFile::exists(dest)) {
-        QFile file(dest);
-        if (!file.remove(dest)) {
+        QFile destF(dest);
+        if (!destF.remove(dest)) {
             setError(UserDefinedError);
             setErrorString(tr("Cannot remove file \"%1\": %2").arg(
-                               QDir::toNativeSeparators(dest), file.errorString()));
+                               QDir::toNativeSeparators(dest), destF.errorString()));
             return false;
         }
     }
 
     // Copy source to destination.
-    QFile file(args.at(0));
     if (!file.copy(dest)) {
         setError(UserDefinedError);
         setErrorString(tr("Cannot copy file \"%1\" to \"%2\": %3").arg(QDir::toNativeSeparators(file.fileName()),
                                                                  QDir::toNativeSeparators(dest), file.errorString()));
         return false;
     }
-    return deleteFileNowOrLater(file.fileName());
+    const bool deleted = deleteFileNowOrLater(file.fileName());
+    if (deleted)
+        emit progressChanged(1);
+    return deleted;
 }
 
 bool MoveOperation::undoOperation()
@@ -305,6 +321,10 @@ bool MoveOperation::undoOperation()
     const QString dest = args.at(1);
     // first: copy back the destination to source
     QFile destF(dest);
+    emit outputTextChanged(tr("Undoing move of \"%1\" back to \"%2\".").arg(
+        QDir::toNativeSeparators(dest),
+        QDir::toNativeSeparators(args.first())
+    ));
     if (!destF.copy(args.first())) {
         setError(UserDefinedError, tr("Cannot copy file \"%1\" to \"%2\": %3").arg(
                      QDir::toNativeSeparators(dest), QDir::toNativeSeparators(args.first()), destF.errorString()));
@@ -319,8 +339,10 @@ bool MoveOperation::undoOperation()
 
     // no backup was done:
     // the move destination file wasn't existing yet - that's no error
-    if (!hasValue(QLatin1String("backupOfExistingDestination")))
+    if (!hasValue(QLatin1String("backupOfExistingDestination"))) {
+        emit progressChanged(1);
         return true;
+    }
 
     // otherwise we have to copy the backup back:
     QFile backupF(value(QLatin1String("backupOfExistingDestination")).toString());
@@ -328,7 +350,11 @@ bool MoveOperation::undoOperation()
     if (!success)
         setError(UserDefinedError, tr("Cannot restore backup file for \"%1\": %2").arg(
                      QDir::toNativeSeparators(dest), backupF.errorString()));
-
+    else {
+        emit outputTextChanged(tr("Restored backup of file \"%1\".").arg(
+            QDir::toNativeSeparators(dest)));
+        emit progressChanged(1);
+    }
     return success;
 }
 
@@ -377,8 +403,11 @@ bool DeleteOperation::performOperation()
     // Optionally UNDOOPERATION can be added as well
     if (!checkArgumentCount(1, 3, QLatin1String("<file to remove> [UNDOOPERATION, \"\"]")))
         return false;
-
-    return deleteFileNowOrLater(arguments().at(0));
+    const QString fileName = arguments().at(0);
+    emit outputTextChanged(tr("Removing File \"%1\".").arg(QDir::toNativeSeparators(fileName)));
+    const bool deleted = deleteFileNowOrLater(fileName);
+    emit progressChanged(1);
+    return deleted;
 }
 
 bool DeleteOperation::undoOperation()
@@ -392,6 +421,10 @@ bool DeleteOperation::undoOperation()
     if (!success)
         setError(UserDefinedError, tr("Cannot restore backup file for \"%1\": %2").arg(
                      QDir::toNativeSeparators(fileName), backupF.errorString()));
+    else {
+        emit outputTextChanged(tr("Restoring File \"%1\".").arg(QDir::toNativeSeparators(fileName)));
+        emit progressChanged(1);
+    }
     return success;
 }
 
@@ -467,6 +500,7 @@ bool MkdirOperation::performOperation()
         return false;
 
     const QString dirName = arguments().at(0);
+    emit outputTextChanged(tr("Creating directory \"%1\".").arg(QDir::toNativeSeparators(dirName)));
     const bool created = QDir::root().mkpath(dirName);
     if (!created) {
         setError(UserDefinedError);
@@ -490,6 +524,7 @@ bool MkdirOperation::undoOperation()
     if (createdDirValue.isEmpty())
         createdDirValue = arguments().first();
     QDir createdDir = QDir(createdDirValue);
+    emit outputTextChanged(tr("Removing directory \"%1\".").arg(QDir::toNativeSeparators(createdDir.path())));
     const bool forceremoval = QVariant(value(QLatin1String("forceremoval"))).toBool();
 
     // Since refactoring we know the mkdir operation which is creating the target path. If we do a full
@@ -563,6 +598,7 @@ bool RmdirOperation::performOperation()
         return false;
 
     const QString firstArg = arguments().at(0);
+    emit outputTextChanged(tr("Removing directory \"%1\".").arg(QDir::toNativeSeparators(firstArg)));
     QDir dir(firstArg);
     if (!dir.exists()) {
         setError(UserDefinedError);
@@ -589,11 +625,11 @@ bool RmdirOperation::undoOperation()
 
     errno = 0;
     const QFileInfo fi(arguments().first());
+    emit outputTextChanged(tr("Recreating directory \"%1\".").arg(QDir::toNativeSeparators(fi.fileName())));
     const bool success = fi.dir().mkdir(fi.fileName());
-    if( !success)
+    if(!success)
         setError(UserDefinedError, tr("Cannot recreate directory \"%1\": %2").arg(
                      QDir::toNativeSeparators(fi.fileName()), errnoToQString(errno)));
-
     return success;
 }
 
@@ -848,3 +884,5 @@ bool PrependFileOperation::testOperation()
     // TODO
     return true;
 }
+
+#include "moc_updateoperations.cpp"

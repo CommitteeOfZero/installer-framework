@@ -11,9 +11,9 @@
 
 namespace KDUpdater {
 
-class KDTOOLS_EXPORT CopyOperation : public UpdateOperation
+class KDTOOLS_EXPORT CopyOperation : public QObject, public UpdateOperation
 {
-    Q_DECLARE_TR_FUNCTIONS(KDUpdater::CopyOperation)
+    Q_OBJECT
 public:
     explicit CopyOperation(QInstaller::PackageManagerCore *core = 0);
     ~CopyOperation();
@@ -24,14 +24,19 @@ public:
     bool testOperation() override;
 
     QDomDocument toXml() const override;
+
+Q_SIGNALS:
+    void outputTextChanged(const QString &progress);
+    void progressChanged(double);
+
 private:
     QString sourcePath();
     QString destinationPath();
 };
 
-class KDTOOLS_EXPORT MoveOperation : public UpdateOperation
+class KDTOOLS_EXPORT MoveOperation : public QObject, public UpdateOperation
 {
-    Q_DECLARE_TR_FUNCTIONS(KDUpdater::MoveOperation)
+    Q_OBJECT
 public:
     explicit MoveOperation(QInstaller::PackageManagerCore *core = 0);
     ~MoveOperation();
@@ -40,11 +45,15 @@ public:
     bool performOperation() override;
     bool undoOperation() override;
     bool testOperation() override;
+
+Q_SIGNALS:
+    void outputTextChanged(const QString &progress);
+    void progressChanged(double);
 };
 
-class KDTOOLS_EXPORT DeleteOperation : public UpdateOperation
+class KDTOOLS_EXPORT DeleteOperation : public QObject, public UpdateOperation
 {
-    Q_DECLARE_TR_FUNCTIONS(KDUpdater::DeleteOperation)
+    Q_OBJECT
 public:
     explicit DeleteOperation(QInstaller::PackageManagerCore *core = 0);
     ~DeleteOperation();
@@ -55,11 +64,15 @@ public:
     bool testOperation() override;
 
     QDomDocument toXml() const override;
+    
+Q_SIGNALS:
+    void outputTextChanged(const QString &progress);
+    void progressChanged(double);
 };
 
-class KDTOOLS_EXPORT MkdirOperation : public UpdateOperation
+class KDTOOLS_EXPORT MkdirOperation : public QObject, public UpdateOperation
 {
-    Q_DECLARE_TR_FUNCTIONS(KDUpdater::MkdirOperation)
+    Q_OBJECT
 public:
     explicit MkdirOperation(QInstaller::PackageManagerCore *core = 0);
 
@@ -67,11 +80,14 @@ public:
     bool performOperation() override;
     bool undoOperation() override;
     bool testOperation() override;
+    
+Q_SIGNALS:
+    void outputTextChanged(const QString &progress);
 };
 
-class KDTOOLS_EXPORT RmdirOperation : public UpdateOperation
+class KDTOOLS_EXPORT RmdirOperation : public QObject, public UpdateOperation
 {
-    Q_DECLARE_TR_FUNCTIONS(KDUpdater::RmdirOperation)
+    Q_OBJECT
 public:
     RmdirOperation(QInstaller::PackageManagerCore *core = 0);
 
@@ -79,6 +95,9 @@ public:
     bool performOperation() override;
     bool undoOperation() override;
     bool testOperation() override;
+    
+Q_SIGNALS:
+    void outputTextChanged(const QString &progress);
 };
 
 class KDTOOLS_EXPORT AppendFileOperation : public UpdateOperation
