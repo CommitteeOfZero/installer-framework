@@ -594,10 +594,11 @@ bool RmdirOperation::performOperation()
 {
     // Requires only one parameter. That is the name of the file to remove.
     // Optionally UNDOOPERATION can be added as well
-    if (!checkArgumentCount(1, 3, QLatin1String("<file to remove> [UNDOOPERATION, \"\"]")))
+    if (!checkArgumentCount(1, 4, QLatin1String("<file to remove> [UNDOOPERATION <operation>] [FORCE]")))
         return false;
 
     const QString firstArg = arguments().at(0);
+    const bool force = arguments().contains(QLatin1String("FORCE"));
     emit outputTextChanged(tr("Removing directory \"%1\".").arg(QDir::toNativeSeparators(firstArg)));
     QDir dir(firstArg);
     if (!dir.exists()) {
@@ -608,7 +609,7 @@ bool RmdirOperation::performOperation()
     }
 
     errno = 0;
-    const bool removed = dir.rmdir(firstArg);
+    const bool removed = force ? dir.removeRecursively() : dir.rmdir(firstArg);
     setValue(QLatin1String("removed"), removed);
     if (!removed) {
         setError(UserDefinedError);
