@@ -149,8 +149,8 @@ public:
     void setShowOnPageList(bool show);
     bool showOnPageList() const;
 
-    virtual bool isComplete() const override;
-    void setComplete(bool complete);
+    Q_INVOKABLE virtual bool isComplete() const override;
+    Q_INVOKABLE void setComplete(bool complete);
 
     virtual bool isInterruptible() const { return false; }
     PackageManagerGui* gui() const { return qobject_cast<PackageManagerGui*>(wizard()); }
