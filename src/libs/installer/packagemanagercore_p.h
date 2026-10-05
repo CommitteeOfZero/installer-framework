@@ -112,6 +112,7 @@ public:
 
     bool runInstaller();
     bool isInstaller() const;
+    bool isPortableInstaller() const;
 
     bool runUninstaller();
     bool isUninstaller() const;

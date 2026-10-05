@@ -4237,6 +4237,23 @@ void PackageManagerCore::setPackageViewer()
 }
 
 /*!
+    Sets the current installer as portable.
+*/
+void PackageManagerCore::setPortableInstaller()
+{
+    d->m_magicMarkerSupplement = BinaryContent::PortableInstaller;
+    emit installerBinaryMarkerChanged(d->m_magicBinaryMarker);
+}
+
+/*!
+    Returns \c true if the current installer is executed as portable.
+*/
+bool PackageManagerCore::isPortableInstaller() const
+{
+    return d->isPortableInstaller();
+}
+
+/*!
     Returns \c true if the current installer is executed as package viewer.
 
     \sa {installer::isPackageViewer}{installer.isPackageViewer}

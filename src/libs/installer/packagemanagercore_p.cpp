@@ -806,6 +806,11 @@ bool PackageManagerCorePrivate::isInstaller() const
     return m_magicBinaryMarker == BinaryContent::MagicInstallerMarker;
 }
 
+bool PackageManagerCorePrivate::isPortableInstaller() const
+{
+    return m_magicMarkerSupplement == BinaryContent::PortableInstaller;
+}
+
 bool PackageManagerCorePrivate::isUninstaller() const
 {
     return m_magicBinaryMarker == BinaryContent::MagicUninstallerMarker;
@@ -2000,10 +2005,13 @@ bool PackageManagerCorePrivate::runInstaller()
                 }
             }
         }
-        emit m_core->titleMessageChanged(tr("Creating Maintenance Tool"));
 
-        m_needToWriteMaintenanceTool = true;
-        m_core->writeMaintenanceTool();
+        if (!m_core->isPortableInstaller())
+        {
+            emit m_core->titleMessageChanged(tr("Creating Maintenance Tool"));
+            m_needToWriteMaintenanceTool = true;
+            m_core->writeMaintenanceTool();
+        }
 
         // fake a possible wrong value to show a full progress bar
         const int progress = ProgressCoordinator::instance()->progressInPercentage();
@@ -2659,24 +2667,26 @@ void PackageManagerCorePrivate::installComponent(Component *component, double pr
         stopProcessForUpdatesOp->setValue(QLatin1String("component"), component->name());
     }
 
-    // now mark the component as installed
-    m_localPackageHub->addPackage(component->name(),
-                                  component->value(scVersion),
-                                  component->value(scDisplayName),
-                                  QPair<QString, bool>(component->value(scTreeName),
-                                                       component->treeNameMoveChildren()),
-                                  component->value(scDescription),
-                                  component->value(scSortingPriority).toInt(),
-                                  component->dependencies(),
-                                  component->autoDependencies(),
-                                  component->forcedInstallation(),
-                                  component->isVirtual(),
-                                  component->value(scUncompressedSize).toULongLong(),
-                                  component->value(scInheritVersion),
-                                  component->isCheckable(),
-                                  component->isExpandedByDefault(),
-                                  component->value(scContentSha1));
-    m_localPackageHub->writeToDisk();
+    if(!isPortableInstaller()) {
+        // now mark the component as installed
+        m_localPackageHub->addPackage(component->name(),
+                                      component->value(scVersion),
+                                      component->value(scDisplayName),
+                                      QPair<QString, bool>(component->value(scTreeName),
+                                                           component->treeNameMoveChildren()),
+                                      component->value(scDescription),
+                                      component->value(scSortingPriority).toInt(),
+                                      component->dependencies(),
+                                      component->autoDependencies(),
+                                      component->forcedInstallation(),
+                                      component->isVirtual(),
+                                      component->value(scUncompressedSize).toULongLong(),
+                                      component->value(scInheritVersion),
+                                      component->isCheckable(),
+                                      component->isExpandedByDefault(),
+                                      component->value(scContentSha1));
+        m_localPackageHub->writeToDisk();
+    }
 
     component->setInstalled();
     component->markAsPerformedInstallation();

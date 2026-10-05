@@ -29,7 +29,8 @@ public:
     enum MagicMarkerSupplement {
         Default = 0x0,
         OfflineGenerator = 0x1,
-        PackageViewer = 0x2
+        PackageViewer = 0x2,
+        PortableInstaller = 0x3,
     };
 
     // the cookie put at the end of the file

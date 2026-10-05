@@ -287,6 +287,10 @@ public:
     // convenience
     Q_INVOKABLE void setInstaller();
     Q_INVOKABLE bool isInstaller() const;
+
+    Q_INVOKABLE void setPortableInstaller();
+    Q_INVOKABLE bool isPortableInstaller() const;
+
     Q_INVOKABLE bool isOfflineOnly() const;
 
     Q_INVOKABLE void setUninstaller();
@@ -304,7 +308,7 @@ public:
     void setPackageViewer();
     Q_INVOKABLE bool isPackageViewer() const;
 
-    void resetBinaryMarkerSupplement();
+    Q_INVOKABLE void resetBinaryMarkerSupplement();
 
     void setUserSetBinaryMarker(qint64 magicMarker);
     Q_INVOKABLE bool isUserSetBinaryMarker() const;

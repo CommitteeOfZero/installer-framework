@@ -158,47 +158,51 @@ bool ExtractArchiveOperation::performOperation()
     // TargetDir for saving filenames, otherwise those would be saved to
     // extracted folder. Also initialize installerbasebinary which we use later
     // to check if the extracted file in question is the maintenancetool itself.
+    bool isPortableInstaller = false;
     QString installerBaseBinary;
     if (PackageManagerCore *core = packageManager()) {
         installDir = core->value(scTargetDir);
         installerBaseBinary = core->toNativeSeparators(core->replaceVariables(core->installerBaseBinary()));
+        isPortableInstaller = core->isPortableInstaller();
     }
-    const QString resourcesPath = installDir + QLatin1Char('/') + QLatin1String("installerResources");
+    if(!isPortableInstaller) {
+        const QString resourcesPath = installDir + QLatin1Char('/') + QLatin1String("installerResources");
+    
+        QString fileDirectory = resourcesPath + QLatin1Char('/') + archivePath.section(QLatin1Char('/'), 1, 1,
+                                QString::SectionSkipEmpty) + QLatin1Char('/');
+        QString archiveFileName = archivePath.section(QLatin1Char('/'), 2, 2, QString::SectionSkipEmpty);
+        QFileInfo fileInfo2(archiveFileName);
+        QString suffix = fileInfo2.suffix();
+        archiveFileName.chop(suffix.length() + 1); // removes suffix (e.g. '.7z') from archive filename
+        QString fileName = archiveFileName + QLatin1String(".txt");
+    
+        QFileInfo targetDirectoryInfo(fileDirectory);
+    
+        QInstaller::createDirectoryWithParents(targetDirectoryInfo.absolutePath());
+        setDefaultFilePermissions(resourcesPath, DefaultFilePermissions::Executable);
+        setDefaultFilePermissions(targetDirectoryInfo.absolutePath(), DefaultFilePermissions::Executable);
+        QFile file(targetDirectoryInfo.absolutePath() + QLatin1Char('/') + fileName);
 
-    QString fileDirectory = resourcesPath + QLatin1Char('/') + archivePath.section(QLatin1Char('/'), 1, 1,
-                            QString::SectionSkipEmpty) + QLatin1Char('/');
-    QString archiveFileName = archivePath.section(QLatin1Char('/'), 2, 2, QString::SectionSkipEmpty);
-    QFileInfo fileInfo2(archiveFileName);
-    QString suffix = fileInfo2.suffix();
-    archiveFileName.chop(suffix.length() + 1); // removes suffix (e.g. '.7z') from archive filename
-    QString fileName = archiveFileName + QLatin1String(".txt");
-
-    QFileInfo targetDirectoryInfo(fileDirectory);
-
-    QInstaller::createDirectoryWithParents(targetDirectoryInfo.absolutePath());
-    setDefaultFilePermissions(resourcesPath, DefaultFilePermissions::Executable);
-    setDefaultFilePermissions(targetDirectoryInfo.absolutePath(), DefaultFilePermissions::Executable);
-
-    QFile file(targetDirectoryInfo.absolutePath() + QLatin1Char('/') + fileName);
-    if (file.open(QIODevice::WriteOnly)) {
-        setDefaultFilePermissions(file.fileName(), DefaultFilePermissions::NonExecutable);
-        QDataStream out (&file);
-        for (int i = 0; i < files.count(); ++i) {
-            if (!installerBaseBinary.isEmpty() && files[i].startsWith(installerBaseBinary)) {
-                // Do not write installerbase binary filename to extracted files. Installer binary
-                // is maintenance tool program, the binary is removed elsewhere
-                // when we do full uninstall.
-                files.clear();
-                break;
+        if (file.open(QIODevice::WriteOnly)) {
+            setDefaultFilePermissions(file.fileName(), DefaultFilePermissions::NonExecutable);
+            QDataStream out (&file);
+            for (int i = 0; i < files.count(); ++i) {
+                if (!installerBaseBinary.isEmpty() && files[i].startsWith(installerBaseBinary)) {
+                    // Do not write installerbase binary filename to extracted files. Installer binary
+                    // is maintenance tool program, the binary is removed elsewhere
+                    // when we do full uninstall.
+                    files.clear();
+                    break;
+                }
+                files[i] = replacePath(files.at(i), installDir, QLatin1String(scRelocatable));
             }
-            files[i] = replacePath(files.at(i), installDir, QLatin1String(scRelocatable));
+            if (!files.isEmpty())
+                out << files;
+            setValue(QLatin1String("files"), file.fileName());
+            file.close();
+        } else {
+            qCWarning(QInstaller::lcInstallerInstallLog) << "Cannot open file for writing " << file.fileName() << ":" << file.errorString();
         }
-        if (!files.isEmpty())
-            out << files;
-        setValue(QLatin1String("files"), file.fileName());
-        file.close();
-    } else {
-        qCWarning(QInstaller::lcInstallerInstallLog) << "Cannot open file for writing " << file.fileName() << ":" << file.errorString();
     }
 
     // TODO: Use backups for rollback, too? Doesn't work for uninstallation though.
