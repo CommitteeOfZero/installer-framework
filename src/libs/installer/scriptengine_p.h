@@ -105,6 +105,8 @@ public:
 
     Q_INVOKABLE void setTextItems(QObject *object, const QStringList &items);
 
+    Q_INVOKABLE void setVisible(bool visible);
+
 signals:
     void interrupted();
     void languageChanged();

@@ -252,6 +252,16 @@ void GuiProxy::setModified(bool value)
         m_gui->setModified(value);
 }
 
+void GuiProxy::setVisible(bool visible) {
+    if (!m_gui) return;
+
+    if (visible) {
+        m_gui->show();
+    } else {
+        m_gui->hide();
+    }
+}
+
 QFileDialogProxy::QFileDialogProxy(PackageManagerCore *core): m_core(core)
 {
 }
