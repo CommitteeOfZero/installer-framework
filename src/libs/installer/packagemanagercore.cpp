@@ -1057,7 +1057,7 @@ int PackageManagerCore::folderFileCount(const QString &folderPath) const
     QDir dir(folderPath);
     if (!dir.exists())
         return -1;
-    return dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count();
+    return dir.entryList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot).count();
 }
 
 /*!
