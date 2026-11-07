@@ -5113,3 +5113,10 @@ QStringList PackageManagerCore::parseNames(const QStringList &requirements)
     }
     return names;
 }
+
+Q_INVOKABLE void PackageManagerCore::sleep(int ms)
+{
+    QEventLoop loop;
+    QTimer::singleShot(ms, &loop, &QEventLoop::quit);
+    loop.exec();
+}

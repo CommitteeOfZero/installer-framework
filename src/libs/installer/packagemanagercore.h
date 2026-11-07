@@ -353,6 +353,8 @@ public:
     Q_INVOKABLE void selectComponent(const QString &id);
     Q_INVOKABLE void deselectComponent(const QString &id);
 
+    Q_INVOKABLE void sleep(int ms);
+
     void rollBackInstallation();
 
     int downloadNeededArchives(double partProgressSize);
