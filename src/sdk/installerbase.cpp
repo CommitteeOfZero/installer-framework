@@ -26,6 +26,10 @@ InstallerBase::InstallerBase(int &argc, char *argv[])
     : SDKApp<QApplication>(argc, argv)
 {
     QInstaller::init(); // register custom operations
+#ifdef Q_OS_MACOS
+    // The native macOS style draws blank checkboxes in the component tree.
+    setStyle(QLatin1String("Fusion"));
+#endif
 }
 
 InstallerBase::~InstallerBase()
