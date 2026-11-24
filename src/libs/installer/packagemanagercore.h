@@ -169,6 +169,8 @@ public:
     Q_INVOKABLE bool containsValue(const QString &key) const;
     Q_INVOKABLE void setValue(const QString &key, const QString &value);
     Q_INVOKABLE QString value(const QString &key, const QString &defaultValue = QString(), const int &format = QSettings::NativeFormat) const;
+    Q_INVOKABLE QString readGlobalConfig(const QString &organization, const QString &application,
+                                         const QString &key, const QString &defaultValue = QString()) const;
     Q_INVOKABLE QStringList values(const QString &key, const QStringList &defaultValue = QStringList()) const;
     Q_INVOKABLE QString key(const QString &value) const;
 

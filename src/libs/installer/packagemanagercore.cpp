@@ -3943,6 +3943,13 @@ QString PackageManagerCore::value(const QString &key, const QString &defaultValu
     return d->m_data.value(key, defaultValue, static_cast<QSettings::Format>(format)).toString();
 }
 
+QString PackageManagerCore::readGlobalConfig(const QString &organization, const QString &application,
+                                             const QString &key, const QString &defaultValue) const
+{
+    QSettingsWrapper settings(QSettingsWrapper::UserScope, organization, application);
+    return settings.value(key, defaultValue).toString();
+}
+
 /*!
     Returns the installer value for \a key. If \a key is not known to the system, \a defaultValue is
     returned. Additionally, on Windows, \a key can be a registry key.
